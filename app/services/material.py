@@ -146,7 +146,9 @@ def download_videos(task_id: str,
         random.shuffle(valid_video_items)
 
     total_duration = 0.0
-    for idx, item in valid_video_items:
+    idx = 0
+    for item in valid_video_items:
+        idx += 1
         try:
             logger.info(f"({idx}/{len(valid_video_items)}) downloading video: {item.url}")
             saved_video_path = save_video(video_url=item.url, save_dir=material_directory)
