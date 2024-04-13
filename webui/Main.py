@@ -341,6 +341,7 @@ with middle_panel:
                                       )
         # 获取选择的背景音乐类型
         bgm_type = bgm_options[selected_index][1]
+        params.bgm_type = bgm_type
 
         # 根据选择显示或隐藏组件
         if bgm_type == "custom":
