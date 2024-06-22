@@ -7,6 +7,8 @@ from loguru import logger
 from edge_tts import submaker, SubMaker
 import edge_tts
 from moviepy.video.tools import subtitles
+import mutagen
+from pydub import AudioSegment
 
 from app.utils import utils
 
@@ -1123,6 +1125,38 @@ def get_audio_duration(sub_maker: submaker.SubMaker):
         return 0.0
     return sub_maker.offset[-1][1] / 10000000
 
+def get_real_audio_duration(audio_file_path: str):
+    """
+    获取音频文件时长
+    """
+    logger.info(f"获取音频文件时长 audio_file_path -> {audio_file_path}")
+    if audio_file_path.lower().endswith(".mp3"):
+        return get_audio_duration_mp3(audio_file_path)
+    if audio_file_path.lower().endswith(".flac"):
+        return get_audio_duration_flac(audio_file_path)
+    return 0.0
+
+def get_audio_duration_mp3(audio_file_path: str):
+    """
+    获取 mp3 音频文件时长
+    """
+    try:
+        audio = mutagen.File(audio_file_path)
+        return audio.info.length
+    except FileNotFoundError:
+        print(f"The file {audio_file_path} not found.")
+        return 0.0
+
+def get_audio_duration_flac(audio_file_path: str):
+    """
+    获取 flac 音频文件时长
+    """
+    try:
+        audio = AudioSegment.from_flac(audio_file_path)
+        return audio.duration_seconds  # 转换为秒
+    except FileNotFoundError:
+        print(f"The file {audio_file_path} not found.")
+        return 0.0
 
 if __name__ == "__main__":
     voices = get_all_voices()

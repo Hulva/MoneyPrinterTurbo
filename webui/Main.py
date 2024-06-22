@@ -301,6 +301,9 @@ with middle_panel:
                                           index=0)
     with st.container(border=True):
         st.write(tr("Audio Settings"))
+
+        params.no_narration_mode = st.toggle(tr("No Narration Mode"))
+
         voices = voice.get_all_voices(filter_locals=["zh-CN", "zh-HK", "zh-TW", "de-DE", "en-US"])
         friendly_names = {
             voice: voice.

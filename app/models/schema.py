@@ -78,6 +78,7 @@ class VideoParams:
     {
       "video_subject": "",
       "video_aspect": "横屏 16:9（西瓜视频）",
+      "no_narration_mode": false,
       "voice_name": "女生-晓晓",
       "bgm_type": "random",
       "bgm_file": "hello.mp3",
@@ -98,6 +99,7 @@ class VideoParams:
 
     video_language: Optional[str] = ""  # auto detect
 
+    no_narration_mode: bool = False # 无旁白模式
     voice_name: Optional[str] = ""
     voice_volume: Optional[float] = 1.0
     bgm_type: Optional[str] = "random"

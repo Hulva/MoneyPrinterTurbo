@@ -72,16 +72,21 @@ def start(task_id, params: VideoParams):
 
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=20)
 
-    logger.info("\n\n## generating audio")
-    audio_file = path.join(utils.task_dir(task_id), f"audio.mp3")
-    sub_maker = voice.tts(text=video_script, voice_name=voice_name, voice_file=audio_file)
-    if sub_maker is None:
-        sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
-        logger.error(
-            "failed to generate audio, maybe the network is not available. if you are in China, please use a VPN.")
-        return
+    audio_file = params.bgm_file
+    if params.no_narration_mode:
+        logger.info("\n\n## no_narration_mode on, skip generating audio")
+    else:
+        logger.info("\n\n## generating audio")
+        audio_file = path.join(utils.task_dir(task_id), f"audio.mp3")
+        sub_maker = voice.tts(text=video_script, voice_name=voice_name, voice_file=audio_file)
+        if sub_maker is None:
+            sm.state.update_task(task_id, state=const.TASK_STATE_FAILED)
+            logger.error(
+                "failed to generate audio, maybe the network is not available. if you are in China, please use a VPN.")
+            return
 
-    audio_duration = voice.get_audio_duration(sub_maker)
+        audio_duration = voice.get_audio_duration(sub_maker)
+    audio_duration = voice.get_real_audio_duration(params.bgm_file)
     audio_duration = math.ceil(audio_duration)
 
     sm.state.update_task(task_id, state=const.TASK_STATE_PROCESSING, progress=30)
