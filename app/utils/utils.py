@@ -67,10 +67,13 @@ def root_dir():
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 
 
-def storage_dir(sub_dir: str = ""):
+def storage_dir(sub_dir: str = "", create: bool = False):
     d = os.path.join(root_dir(), "storage")
     if sub_dir:
         d = os.path.join(d, sub_dir)
+    if create and not os.path.exists(d):
+        os.makedirs(d)
+
     return d
 
 
@@ -163,12 +166,34 @@ def str_contains_punctuation(word):
 def split_string_by_punctuations(s):
     result = []
     txt = ""
-    for char in s:
+
+    previous_char = ""
+    next_char = ""
+    for i in range(len(s)):
+        char = s[i]
+        if char == "\n":
+            result.append(txt.strip())
+            txt = ""
+            continue
+
+        if i > 0:
+            previous_char = s[i - 1]
+        if i < len(s) - 1:
+            next_char = s[i + 1]
+
+        if char == "." and previous_char.isdigit() and next_char.isdigit():
+            # 取现1万，按2.5%收取手续费, 2.5 中的 . 不能作为换行标记
+            txt += char
+            continue
+
         if char not in const.PUNCTUATIONS:
             txt += char
         else:
             result.append(txt.strip())
             txt = ""
+    result.append(txt.strip())
+    # filter empty string
+    result = list(filter(None, result))
     return result
 
 
@@ -197,3 +222,7 @@ def load_locales(i18n_dir):
                 with open(os.path.join(root, file), "r", encoding="utf-8") as f:
                     _locales[lang] = json.loads(f.read())
     return _locales
+
+
+def parse_extension(filename):
+    return os.path.splitext(filename)[1].strip().lower().replace(".", "")

@@ -1,14 +1,17 @@
 import os
 import glob
+import pathlib
 import shutil
 
 from fastapi import Request, Depends, Path, BackgroundTasks, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.params import File
 from loguru import logger
 
 from app.config import config
 from app.controllers import base
+from app.controllers.manager.memory_manager import InMemoryTaskManager
+from app.controllers.manager.redis_manager import RedisTaskManager
 from app.controllers.v1.base import new_router
 from app.models.exception import HttpException
 from app.models.schema import TaskVideoRequest, TaskQueryResponse, TaskResponse, TaskQueryRequest, \
@@ -20,6 +23,35 @@ from app.utils import utils
 # 认证依赖项
 # router = new_router(dependencies=[Depends(base.verify_token)])
 router = new_router()
+
+_enable_redis = config.app.get("enable_redis", False)
+_redis_host = config.app.get("redis_host", "localhost")
+_redis_port = config.app.get("redis_port", 6379)
+_redis_db = config.app.get("redis_db", 0)
+_redis_password = config.app.get("redis_password", None)
+_max_concurrent_tasks = config.app.get("max_concurrent_tasks", 5)
+
+redis_url = f"redis://:{_redis_password}@{_redis_host}:{_redis_port}/{_redis_db}"
+# 根据配置选择合适的任务管理器
+if _enable_redis:
+    task_manager = RedisTaskManager(max_concurrent_tasks=_max_concurrent_tasks, redis_url=redis_url)
+else:
+    task_manager = InMemoryTaskManager(max_concurrent_tasks=_max_concurrent_tasks)
+
+# @router.post("/videos-test", response_model=TaskResponse, summary="Generate a short video")
+# async def create_video_test(request: Request, body: TaskVideoRequest):
+#     task_id = utils.get_uuid()
+#     request_id = base.get_task_id(request)
+#     try:
+#         task = {
+#             "task_id": task_id,
+#             "request_id": request_id,
+#             "params": body.dict(),
+#         }
+#         task_manager.add_task(tm.start_test, task_id=task_id, params=body)
+#         return utils.get_response(200, task)
+#     except ValueError as e:
+#         raise HttpException(task_id=task_id, status_code=400, message=f"{request_id}: {str(e)}")
 
 
 @router.post("/videos", response_model=TaskResponse, summary="Generate a short video")
@@ -33,7 +65,8 @@ def create_video(background_tasks: BackgroundTasks, request: Request, body: Task
             "params": body.dict(),
         }
         sm.state.update_task(task_id)
-        background_tasks.add_task(tm.start, task_id=task_id, params=body)
+        # background_tasks.add_task(tm.start, task_id=task_id, params=body)
+        task_manager.add_task(tm.start, task_id=task_id, params=body)
         logger.success(f"video created: {utils.to_json(task)}")
         return utils.get_response(200, task)
     except ValueError as e:
@@ -90,7 +123,7 @@ def delete_video(request: Request, task_id: str = Path(..., description="Task ID
 
         sm.state.delete_task(task_id)
         logger.success(f"video deleted: {utils.to_json(task)}")
-        return utils.get_response(200, task)
+        return utils.get_response(200)
 
     raise HttpException(task_id=task_id, status_code=404, message=f"{request_id}: task not found")
 
@@ -137,7 +170,57 @@ def upload_bgm_file(request: Request, file: UploadFile = File(...)):
 async def stream_video(request: Request, file_path: str):
     tasks_dir = utils.task_dir()
     video_path = os.path.join(tasks_dir, file_path)
-    if os.path.isfile(video_path):
-        return FileResponse(video_path, media_type="video/mp4", filename=file_path)
-    else:
-        return {"message": "File not found."}
+    range_header = request.headers.get('Range')
+    video_size = os.path.getsize(video_path)
+    start, end = 0, video_size - 1
+
+    length = video_size
+    if range_header:
+        range_ = range_header.split('bytes=')[1]
+        start, end = [int(part) if part else None for part in range_.split('-')]
+        if start is None:
+            start = video_size - end
+            end = video_size - 1
+        if end is None:
+            end = video_size - 1
+        length = end - start + 1
+
+    def file_iterator(file_path, offset=0, bytes_to_read=None):
+        with open(file_path, 'rb') as f:
+            f.seek(offset, os.SEEK_SET)
+            remaining = bytes_to_read or video_size
+            while remaining > 0:
+                bytes_to_read = min(4096, remaining)
+                data = f.read(bytes_to_read)
+                if not data:
+                    break
+                remaining -= len(data)
+                yield data
+
+    response = StreamingResponse(file_iterator(video_path, start, length), media_type='video/mp4')
+    response.headers['Content-Range'] = f'bytes {start}-{end}/{video_size}'
+    response.headers['Accept-Ranges'] = 'bytes'
+    response.headers['Content-Length'] = str(length)
+    response.status_code = 206  # Partial Content
+
+    return response
+
+
+@router.get("/download/{file_path:path}")
+async def download_video(_: Request, file_path: str):
+    """
+    download video
+    :param _: Request request
+    :param file_path: video file path, eg: /cd1727ed-3473-42a2-a7da-4faafafec72b/final-1.mp4
+    :return: video file
+    """
+    tasks_dir = utils.task_dir()
+    video_path = os.path.join(tasks_dir, file_path)
+    file_path = pathlib.Path(video_path)
+    filename = file_path.stem
+    extension = file_path.suffix
+    headers = {
+        "Content-Disposition": f"attachment; filename={filename}{extension}"
+    }
+    return FileResponse(path=video_path, headers=headers, filename=f"{filename}{extension}",
+                        media_type=f'video/{extension[1:]}')
